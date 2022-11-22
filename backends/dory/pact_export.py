@@ -171,7 +171,7 @@ def export_net(net : nn.Module,name : str, out_dir : str, eps_in : float, in_dat
     if in_data is not None:
         im_tensor = in_data.clone().to(dtype=torch.float64)
         net_integerized = net_integerized.to(dtype=torch.float64)
-        output = net_integerized(im_tensor)[2].to(dtype=torch.float64)
+        output = net_integerized(im_tensor).to(dtype=torch.float64)
         # now, save everything into beautiful text files
         def save_beautiful_text(t : torch.Tensor, layer_name : str, filename : str):
             t = t.squeeze(0)
