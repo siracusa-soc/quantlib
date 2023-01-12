@@ -154,7 +154,7 @@ class RequantShift(nn.Module):
             return self.MyRequantShift.apply(x, self.mul.type_as(x), self.add.type_as(x), self.div.type_as(x), self.signed, self.n_levels_out.type_as(x), self.cmsis_requant)
         else:
             # calling `forward` directly does not trigger the symbolic export
-            return self.MyRequantShift.forward(None, x, self.mul.type_as(x), self.add.type_as(x), self.div.type_as(x), self.signed, self.n_levels_out, self.cmsis_requant)
+            return self.MyRequantShift.forward(None, x, self.mul.type_as(x).reshape([-1]+[1]*(len(x.shape)-2)), self.add.type_as(x).reshape([-1]+[1]*(len(x.shape)-2)), self.div.type_as(x), self.signed, self.n_levels_out, self.cmsis_requant)
 
 class HardActRequantShift(nn.Module):
     #def __init__(self, gamma_h : torch.Tensor, beta_h : torch.Tensor, three :
