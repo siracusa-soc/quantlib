@@ -114,7 +114,7 @@ class DORYAdder(nn.Module):
                 params[f"{name}_shift_i"] = shift
                 params[f"{name}_n_levels_i"] = n_l
                 params[f"{name}_rq_i"] = requant
-            ret = g.op("DoryOps::Add", x1, x2, **params)
+            ret = g.op("Add", x1, x2, **params)
             ret.setType(x1.type())
             return ret
 

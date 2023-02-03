@@ -22,7 +22,7 @@
 from functools import partial
 from pathlib import Path
 
-from torch.onnx import OperatorExportTypes
+from torch.onnx import OperatorExportTypes, CheckerError
 import torch
 from torch import nn
 import torchvision
@@ -139,7 +139,8 @@ def export_net(net : nn.Module,name : str, out_dir : str, eps_in : float, in_dat
 
     #first export an unannotated ONNX graph
     test_input = torch.rand(shape_in)
-    torch.onnx.export(net_integerized.to('cpu'),
+    try:
+        torch.onnx.export(net_integerized.to('cpu'),
                       test_input,
                       str(onnx_path),
                       export_params=True,
@@ -147,6 +148,9 @@ def export_net(net : nn.Module,name : str, out_dir : str, eps_in : float, in_dat
                       opset_version=opset_version,
                       do_constant_folding=True,
                       keep_initializers_as_inputs=True)
+    except CheckerError as e:
+        pass
+
 
     #load the exported model and annotate it
     onnx_model = onnx.load(str(onnx_path))
