@@ -146,7 +146,6 @@ def export_net(net : nn.Module,name : str, out_dir : str, eps_in : float, in_dat
                       verbose=False,
                       opset_version=opset_version,
                       do_constant_folding=True,
-                      operator_export_type=OperatorExportTypes.ONNX_FALLTHROUGH,
                       keep_initializers_as_inputs=True)
 
     #load the exported model and annotate it
