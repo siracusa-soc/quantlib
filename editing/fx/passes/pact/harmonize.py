@@ -41,7 +41,7 @@ from ...util.tracing import LeafTracer, custom_symbolic_trace
 from .pact_util import PACT_symbolic_trace
 from .. import FxPass, SequentialPass, InsertModuleBetweenModulesPass, RetracePass, ModularizePass
 
-from .pact_util import PACT_OPS, PACT_OPS_INCLUSIVE, PACTTracer, PACT_symbolic_trace
+from .pact_util import PACT_OPS, PACT_OPS_INCLUSIVE, PACTTracer, PACT_symbolic_trace, PACT_symbolic_trace_inclusive
 
 from functools import partial
 import copy
@@ -503,90 +503,89 @@ def apply_wrap_module_fun(node, _pass, _tracer):
     return returnNode, node.args, node.kwargs
 
 class ApplyPassToWrapModule(FxPass):
-    def __init__(self, _pass):
+    def __init__(self, _pass, trace = PACT_symbolic_trace_inclusive):
         super().__init__()
-        tracer = LeafTracer(PACT_OPS_INCLUSIVE)
-        self.trace = partial(custom_symbolic_trace, tracer=tracer)
         self._pass = _pass
+        self.trace = trace
 
     def run_pass(self, gm):
         modules = dict(gm.named_modules())
-        for module in modules.values():
-            if isinstance(module, PACTWrapModule):
-                subGM = self.trace(module.module)
-                subGMModules = dict(subGM.named_modules())
-                # SCHEREMO: if subGM contains WrapModule, iterate here, depth-first
-                wrapModuleList = [node for node in subGM.graph.nodes if (node.op=='call_module' and isinstance(subGMModules[node.target], PACTWrapModule))]
-                if len(list(wrapModuleList)) > 1:
-                    subGM = self.run_pass(subGM)
-                subGM = self._pass.apply(subGM)
-                subGM.recompile()
-                module.module = subGM
+        for node in gm.graph.nodes:
+            if node.op == 'call_module' and isinstance(modules[node.target], PACTWrapModule):
+
+                module = modules[node.target]
+                mod_graph = self.trace(module.module)
+
+                mod = self._pass.apply(mod_graph)
+                module.module = mod
+
+        gm.recompile()
+        gm.graph.eliminate_dead_code()
         return gm
+
+def integerize_wrap_module_fun(node, _pass, _tracer, _shape_fun: lambda node: node.meta['tensor_meta'].shape):
+
+    #shape_in = _shape_fun(node)
+    shape_in = node.meta['shape_in']
+    eps_in = node.meta['quant'].eps_in[0]
+    runnablePass = _pass(shape_in, eps_in)
+    module = dict(node.graph._owning_module.named_modules())[node.target]
+
+    cloneModule = copy.deepcopy(module.module)
+    fx_graph = _tracer.trace(cloneModule)
+    fx_model = fx.GraphModule(_tracer.root, fx_graph, _tracer.root.__class__.__name__)
+    fx_model = runnablePass.apply(fx_model)
+    returnNode = PACTWrapModule(fx_model, module.n_levels, module._dict, False, **module.actArgs)
+    return returnNode, node.args, node.kwargs
 
 class IntegerizeWrapModule(FxPass):
-
-    def __init__(self, _pass):
+    def __init__(self, _pass, trace = PACT_symbolic_trace_inclusive):
         super().__init__()
-        tracer = LeafTracer(PACT_OPS_INCLUSIVE)
-        self.trace = partial(custom_symbolic_trace, tracer=tracer)
         self._pass = _pass
-
-    def integerize_wrap_module_fun(self, gm, node, _pass):
-        shape_in = node.meta['shape_in']
-        eps_in = node.meta['quant'].eps_in[0]
-        runnablePass = _pass(shape_in, eps_in)
-        gm = runnablePass.apply(gm)
-        return gm, eps_in, shape_in
+        self.trace = trace
 
     def run_pass(self, gm):
+
         modules = dict(gm.named_modules())
         for node in gm.graph.nodes:
             if node.op == 'call_module' and isinstance(modules[node.target], PACTWrapModule):
-                module = modules[node.target]
-                subGM = self.trace(module.module)
-                subGM, eps_in, shape_in = self.integerize_wrap_module_fun(subGM, node, self._pass)
-                subGMModules = dict(subGM.named_modules())
-                # SCHEREMO: if subGM contains WrapModule, iterate here, breadth-first
-                wrapModuleList = [node for node in subGM.graph.nodes if (node.op=='call_module' and isinstance(subGMModules[node.target], PACTWrapModule))]
-                if len(list(wrapModuleList)) > 1:
-                    subGM = self.run_pass(subGM)
-                subGM.recompile()
-                module.module = subGM
-                module.eps_in = eps_in
-                module.shape_in = shape_in
-        return gm
 
+                module = modules[node.target]
+                shape_in = node.meta['shape_in']
+                eps_in = node.meta['quant'].eps_in[0]
+                mod_graph = self.trace(module.module)
+
+                mod = self._pass(shape_in, eps_in).apply(mod_graph)
+                module.eps_in = eps_in
+                module.module = mod
+
+        gm.recompile()
+        gm.graph.eliminate_dead_code()
+        return gm
 
 class DorifyWrapModule(FxPass):
-
-    def __init__(self, _pass):
+    def __init__(self, _pass, trace = PACT_symbolic_trace_inclusive):
         super().__init__()
-        tracer = LeafTracer(PACT_OPS_INCLUSIVE)
-        self.trace = partial(custom_symbolic_trace, tracer=tracer)
         self._pass = _pass
-
-    def integerize_wrap_module_fun(self, gm, node, _pass):
-        shape_in = node.meta['shape_in']
-        runnablePass = _pass(shape_in)
-        gm = runnablePass.apply(gm)
-        return gm
+        self.trace = trace
 
     def run_pass(self, gm):
+
         modules = dict(gm.named_modules())
         for node in gm.graph.nodes:
             if node.op == 'call_module' and isinstance(modules[node.target], PACTWrapModule):
+
                 module = modules[node.target]
-                subGM = self.trace(module.module)
-                subGM = self.integerize_wrap_module_fun(subGM, node, self._pass)
-                subGMModules = dict(subGM.named_modules())
-                # SCHEREMO: if subGM contains WrapModule, iterate here, breadth-first
-                wrapModuleList = [node for node in subGM.graph.nodes if (node.op=='call_module' and isinstance(subGMModules[node.target], PACTWrapModule))]
-                if len(list(wrapModuleList)) > 1:
-                    subGM = self.run_pass(subGM)
-                subGM.recompile()
-                module.module = subGM
+                shape_in = node.meta['shape_in']
+                mod_graph = self.trace(module.module)
+
+                mod = self._pass(shape_in).apply(mod_graph)
+                module.module = mod
+
+        gm.recompile()
+        gm.graph.eliminate_dead_code()
         return gm
+
 
 def wrap_module_fun(node, n_levels, quantize, **actArgs):
     module = dict(node.graph._owning_module.named_modules())[node.target]
