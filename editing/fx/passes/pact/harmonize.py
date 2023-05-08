@@ -553,10 +553,13 @@ class IntegerizeWrapModule(FxPass):
                 module = modules[node.target]
                 shape_in = node.meta['shape_in']
                 eps_in = node.meta['quant'].eps_in[0]
+                eps_out = node.meta['quant'].eps_out
+
                 mod_graph = self.trace(module.module)
 
                 mod = self._pass(shape_in, eps_in).apply(mod_graph)
                 module.eps_in = eps_in
+                module.eps_out = eps_out
                 module.module = mod
 
         gm.recompile()
